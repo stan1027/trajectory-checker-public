@@ -1,0 +1,142 @@
+# 新买家校验规则模板
+# 使用方法: 复制此文件为 <buyer-name>.yaml，填写各项配置
+# 或使用 /trajectory-checker:check-trajectory --add-buyer <spec.docx> 自动生成
+
+# TODO: 填写买家标识（小写英文，用于文件名）
+buyer: ""
+# TODO: 填写买家显示名称
+display_name: ""
+# TODO: 填写规范文档版本
+spec_version: ""
+# 原始规范文档文件名（可选）
+spec_source: ""
+
+thresholds:
+  # system prompt 最小字符数
+  system_min_length: 5000
+  # system prompt 去重比（唯一数/总数，0-1）
+  system_unique_ratio: 0.5
+  # tools schema 是否要求不完全相同
+  tools_must_differ: true
+  # 工具 description 最小字符数
+  tools_desc_min_length: 20
+  # tool 消息是否必须有 name 字段
+  tool_require_name: true
+  # 非内置工具的 result 最少唯一值数
+  tool_result_min_unique: 5
+  # assistant inter-step content 非空率（0-1）
+  assistant_content_min_rate: 0.3
+  # thinking/reasoning 是否为偏好项；缺少时 warning
+  thinking_preferred: true
+  # signature/思考签名是否为偏好项；缺少时 warning
+  signature_preferred: false
+  # user 消息是否必须包含 harness 注入块
+  user_injection_required: true
+  # 首轮 user 消息去重比（0-1）
+  user_first_unique_ratio: 0.5
+  # 跨记录消息重叠率上限（0-1）
+  cross_record_max_overlap: 0.5
+  # tools parameters 必须是完整 object schema
+  tools_parameters_required: true
+  # system 中至少能看到多少比例的 tools 名称
+  system_tools_name_min_coverage: 0.5
+
+# 每条记录必须有的顶层字段
+required_top_fields:
+  - task_id
+  - prompt
+  - candidates
+  - tools
+  - meta
+
+# meta 中必须有的字段
+required_meta_fields:
+  - create_time
+  - model
+  - harness
+
+# meta 中推荐有的字段（缺少只提示 info）
+recommended_meta_fields:
+  - harness_version
+  - session_id
+  - trace_id
+
+# 允许的 agent scaffold（可选）
+allowed_scaffolds: []
+
+# scaffold 别名（可选）
+allowed_scaffold_aliases: {}
+
+# 允许的模型（可选）
+allowed_models: []
+
+# user 消息中应出现的 harness 注入标记
+user_injection_markers:
+  - "<system-reminder>"
+
+# 模板化 tool result 反例标记
+tool_result_template_markers:
+  - "操作完成"
+  - "执行成功"
+  - "completed successfully"
+
+# user 内容误混入 tool/tool result 时的常见标记
+user_tool_merge_markers:
+  - "tool_result"
+  - "tool_use"
+  - "tool_call_id"
+
+# 豁免 tool_result 唯一性检查的内置工具
+builtin_tools_exempt:
+  - TaskCreate
+  - TaskUpdate
+  - TaskList
+  - TaskGet
+  - TaskStop
+  - TaskOutput
+
+# 各 Harness 的 system prompt 特征
+# TODO: 根据买家要求的 harness 类型填写
+harness_signatures:
+  claude-code:
+    system_markers:
+      - "You are Claude Code"
+      - "Anthropic's official CLI"
+    min_system_length: 5000
+
+# 合成痕迹关键词（出现即判定为合成数据）
+# TODO: 根据买家要求填写
+synthetic_markers: []
+
+# 各检查项开关（设为 false 可跳过该检查）
+checks_enabled:
+  top_level_fields: true
+  system_format: true
+  message_order: true
+  tool_call_pairing: true
+  candidates_format: true
+  system_uniqueness: true
+  system_length: true
+  tools_uniqueness: true
+  tool_result_uniqueness: true
+  assistant_content_rate: true
+  user_first_uniqueness: true
+  system_harness_markers: true
+  tool_name_field: true
+  tools_description_length: true
+  tools_schema_shape: true
+  tool_call_declared: true
+  tool_call_arguments_schema: true
+  tool_result_template_markers: true
+  user_injection_markers: true
+  user_tool_merge_markers: true
+  meta_required_fields: true
+  allowed_scaffold_model: true
+  signature_shape: true
+  thinking_presence: true
+  system_tools_consistency: true
+  cross_record_dedup: true
+  prompt_candidates_tools_dedup: true
+  session_containment: true
+  repetition_garbled: true
+  synthetic_markers: true

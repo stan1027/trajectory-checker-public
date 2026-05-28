@@ -1,0 +1,14 @@
+{
+  "name": "trajectory-checker-marketplace",
+  "description": "Trajectory data validation tools for LLM agent execution traces",
+  "owner": {
+    "name": "Trajectory Checker Maintainers"
+  },
+  "plugins": [
+    {
+      "name": "trajectory-checker",
+      "source": "./",
+      "description": "Validate LLM agent trajectory data against configurable delivery specifications. Includes structural, statistical, authenticity, and Markdown report generation checks."
+    }
+  ]
+}

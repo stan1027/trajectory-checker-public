@@ -1,0 +1,115 @@
+# Example buyer profile
+# Customize thresholds and checks for your specific buyer requirements
+
+buyer: example
+display_name: Example Buyer
+spec_version: "2025-05-20"
+spec_source: "spec.docx"
+
+# 阈值配置
+thresholds:
+  # AP-1: system 去重比（唯一数/总数）
+  system_unique_ratio: 0.5
+  # AP-2: system 最小字符数（Claude Code ≥5KB, OpenClaw ≥30KB）
+  system_min_length: 5000
+  # AP-3: tools schema 不能全部相同
+  tools_must_differ: true
+  # AP-4: 非内置工具的 result 最少唯一数
+  tool_result_min_unique: 5
+  # AP-5: assistant inter-step content 非空率
+  assistant_content_min_rate: 0.3
+  # AP-9: 工具 description 最小长度
+  tools_desc_min_length: 20
+  # AP-13: user 消息必须包含 harness 注入块
+  user_injection_required: true
+  # AP-16: 首轮 user 消息去重比
+  user_first_unique_ratio: 0.5
+  # 跨记录消息重叠率上限
+  cross_record_max_overlap: 0.5
+  # tool 消息必须有 name 字段
+  tool_require_name: true
+
+# 必要顶层字段
+required_top_fields:
+  - task_id
+  - prompt
+  - candidates
+  - tools
+  - meta
+
+# meta 必要字段
+required_meta_fields:
+  - create_time
+  - model
+  - harness
+
+# meta 推荐字段（缺少会提示 info，不会 error）
+recommended_meta_fields:
+  - harness_version
+  - session_id
+  - trace_id
+
+# user 消息中应出现的 harness 注入标记
+user_injection_markers:
+  - "<system-reminder>"
+
+# 内置工具（豁免 tool_result 唯一性检查）
+builtin_tools_exempt:
+  - TaskCreate
+  - TaskUpdate
+  - TaskList
+  - TaskGet
+  - TaskStop
+  - TaskOutput
+
+# 各 Harness 的 system prompt 特征签名
+harness_signatures:
+  claude-code:
+    system_markers:
+      - "You are Claude Code"
+      - "Anthropic's official CLI"
+    min_system_length: 5000
+  claude-agent-sdk:
+    system_markers:
+      - "Claude Agent SDK"
+      - "Claude agent"
+    min_system_length: 5000
+  openclaw:
+    system_markers:
+      - "OpenClaw"
+    min_system_length: 30000
+  codex-cli:
+    system_markers:
+      - "Codex"
+    min_system_length: 3000
+
+# 合成痕迹关键词（出现在 user/system 中即为合成数据）
+synthetic_markers:
+  - "Data-production constraints"
+  - "raw tool harness"
+  - "production run"
+  - "not a summary rewrite"
+  - "real agent execution"
+  - "authentic trajectory"
+
+# 各检查项开关（默认全部开启）
+checks_enabled:
+  top_level_fields: true
+  system_format: true
+  message_order: true
+  tool_call_pairing: true
+  candidates_format: true
+  system_uniqueness: true
+  system_length: true
+  tools_uniqueness: true
+  tool_result_uniqueness: true
+  assistant_content_rate: true
+  user_first_uniqueness: true
+  system_harness_markers: true
+  tool_name_field: true
+  tools_description_length: true
+  user_injection_markers: true
+  meta_required_fields: true
+  cross_record_dedup: true
+  session_containment: true
+  synthetic_markers: true
