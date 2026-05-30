@@ -1121,17 +1121,20 @@ class TrajectoryChecker:
             random.seed(42)
             pairs_to_check = random.sample(pairs_to_check, 200)
 
+        involved = set()
+        for i, j in pairs_to_check:
+            involved.add(i)
+            involved.add(j)
+
         high_overlap_pairs = []
         for role in ["assistant", "user", "tool"]:
-            role_hashes = {i: extract_hashes(self.records[i], role) for i in range(len(self.records))}
+            role_hashes = {i: extract_hashes(self.records[i], role) for i in involved}
             for i, j in pairs_to_check:
                 si, sj = role_hashes.get(i, set()), role_hashes.get(j, set())
                 if not si or not sj:
                     continue
                 overlap = len(si & sj)
-                ratio_i = overlap / len(si) if si else 0
-                ratio_j = overlap / len(sj) if sj else 0
-                max_ratio = max(ratio_i, ratio_j)
+                max_ratio = max(overlap / len(si), overlap / len(sj))
                 if max_ratio > max_overlap:
                     high_overlap_pairs.append((i, j, role, max_ratio))
 
@@ -1167,8 +1170,11 @@ class TrajectoryChecker:
         if not self._check_enabled("prompt_candidates_tools_dedup"):
             return
         exact: dict[str, list[int]] = defaultdict(list)
+        key_hashes = []
         for i, rec in enumerate(self.records):
-            exact[_hash(_canonical_json(self._pct_key(rec)))].append(i)
+            h = _hash(_canonical_json(self._pct_key(rec)))
+            exact[h].append(i)
+            key_hashes.append(h)
 
         duplicate_groups = [idxs for idxs in exact.values() if len(idxs) > 1]
         for group in duplicate_groups:
@@ -1180,17 +1186,30 @@ class TrajectoryChecker:
             dup_count = sum(len(g) - 1 for g in duplicate_groups)
             self.statistics["exact_duplicate_prompt_candidates_tools"] = str(dup_count)
 
-        tokenized = [(i, self._pct_flat_tokens(rec)) for i, rec in enumerate(self.records)]
+        sys_buckets: dict[str, list[int]] = defaultdict(list)
+        for i, rec in enumerate(self.records):
+            sys_buckets[_hash(self._get_system_text(rec))].append(i)
+
         prefix_hits = []
-        for i, toks_i in tokenized:
-            for j, toks_j in tokenized:
-                if i == j or len(toks_i) >= len(toks_j):
+        for bucket in sys_buckets.values():
+            if len(bucket) < 2:
+                continue
+            bucket_with_len = [(i, len(self.records[i].get("prompt", []))) for i in bucket]
+            bucket_with_len.sort(key=lambda x: x[1])
+            for ai in range(len(bucket_with_len)):
+                idx_i, len_i = bucket_with_len[ai]
+                if len_i < 3:
                     continue
-                if len(toks_i) < 3:
-                    continue
-                if toks_j[:len(toks_i)] == toks_i:
-                    prefix_hits.append((i, j, len(toks_i), len(toks_j)))
-                    break
+                prompt_i = self.records[idx_i].get("prompt", [])
+                prefix_hash_i = _hash(_canonical_json(prompt_i))
+                for bi in range(ai + 1, len(bucket_with_len)):
+                    idx_j, len_j = bucket_with_len[bi]
+                    if key_hashes[idx_i] == key_hashes[idx_j]:
+                        continue
+                    prompt_j = self.records[idx_j].get("prompt", [])[:len_i]
+                    if _hash(_canonical_json(prompt_j)) == prefix_hash_i:
+                        prefix_hits.append((idx_i, idx_j, len_i, len_j))
+                        break
 
         for short_idx, long_idx, short_len, long_len in prefix_hits:
             self.findings.append(Finding("prompt_candidates_tools_dedup", "error",
@@ -1209,34 +1228,48 @@ class TrajectoryChecker:
     def _check_session_containment(self):
         if not self._check_enabled("session_containment"):
             return
-        msg_counts = [(i, len(rec.get("prompt", []))) for i, rec in enumerate(self.records)]
-        msg_counts.sort(key=lambda x: x[1], reverse=True)
 
-        def prompt_prefix_hash(rec, n):
-            prompt = rec.get("prompt", [])[:n]
-            return _hash(json.dumps(prompt, sort_keys=True))
+        sys_hashes: dict[str, list[tuple[int, int]]] = defaultdict(list)
+        for i, rec in enumerate(self.records):
+            sys_text = self._get_system_text(rec)
+            plen = len(rec.get("prompt", []))
+            sys_hashes[_hash(sys_text)].append((i, plen))
+
+        prefix_cache: dict[tuple[int, int], str] = {}
+
+        def prompt_prefix_hash(idx: int, n: int) -> str:
+            key = (idx, n)
+            cached = prefix_cache.get(key)
+            if cached is not None:
+                return cached
+            prompt = self.records[idx].get("prompt", [])[:n]
+            h = _hash(json.dumps(prompt, sort_keys=True))
+            prefix_cache[key] = h
+            return h
 
         containment_groups = []
         checked = set()
-        for ai, (idx_a, len_a) in enumerate(msg_counts):
-            if idx_a in checked:
+
+        for bucket in sys_hashes.values():
+            if len(bucket) < 2:
                 continue
-            group = [idx_a]
-            for bi in range(ai + 1, len(msg_counts)):
-                idx_b, len_b = msg_counts[bi]
-                if idx_b in checked:
+            bucket.sort(key=lambda x: x[1], reverse=True)
+            for ai in range(len(bucket)):
+                idx_a, len_a = bucket[ai]
+                if idx_a in checked:
                     continue
-                if len_b < 5:
-                    continue
-                check_len = max(1, len_b - 3)
-                h_a = prompt_prefix_hash(self.records[idx_a], check_len)
-                h_b = prompt_prefix_hash(self.records[idx_b], check_len)
-                if h_a == h_b:
-                    group.append(idx_b)
-                    checked.add(idx_b)
-            if len(group) > 1:
-                containment_groups.append(group)
-                checked.add(idx_a)
+                group = [idx_a]
+                for bi in range(ai + 1, len(bucket)):
+                    idx_b, len_b = bucket[bi]
+                    if idx_b in checked or len_b < 5:
+                        continue
+                    check_len = max(1, len_b - 3)
+                    if prompt_prefix_hash(idx_a, check_len) == prompt_prefix_hash(idx_b, check_len):
+                        group.append(idx_b)
+                        checked.add(idx_b)
+                if len(group) > 1:
+                    containment_groups.append(group)
+                    checked.add(idx_a)
 
         for group in containment_groups:
             sizes = [len(self.records[i].get("prompt", [])) for i in group]
